@@ -288,16 +288,16 @@ const api = {
   // ============ SOCIAL ============
   social: {
     // Follow a stack
-    follow: (stackId) => request('POST', '/api/follow.php?action=follow', { stack_id: stackId }),
+    follow: (stackId) => request('POST', '/api/stack_follow.php?action=follow', { stack_id: parseInt(stackId) }),
     
     // Unfollow
-    unfollow: (stackId) => request('POST', '/api/follow.php?action=unfollow', { stack_id: stackId }),
+    unfollow: (stackId) => request('POST', '/api/stack_follow.php?action=unfollow', { stack_id: parseInt(stackId) }),
     
     // Check if following
-    isFollowing: (stackId) => request('POST', '/api/follow.php?action=check', { stack_id: stackId }),
+    isFollowing: (stackId) => request('POST', '/api/stack_follow.php?action=check', { stack_id: parseInt(stackId) }),
     
     // Get followed stacks
-    following: (limit = 50, offset = 0) => request('POST', '/api/follow.php?action=list', { limit, offset }),
+    following: (limit = 50, offset = 0) => request('POST', '/api/stack_follow.php?action=list', { limit, offset }),
   },
 
   // ============ CHAT ============
@@ -318,8 +318,8 @@ const api = {
 
   // ============ REFERRALS ============
   referrals: {
-    stats: () => request('POST', '/api/referrals.php?action=stats', {}),
-    code: () => request('POST', '/api/referrals.php?action=code', {}),
+    stats: () => request('GET', '/api/referrals.php?action=stats'),
+    code: () => request('GET', '/api/referrals.php?action=code'),
   },
 };
 
