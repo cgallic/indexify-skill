@@ -128,37 +128,24 @@ Default rules in `trade-config.json`:
 
 ## API Coverage
 
-- ✅ Account (profile, search users)
-- ✅ Profile (twitter, telegram, discord, linkedin, personal links)
-- ✅ Stacks (discover, trending, official, create, edit, close, partial orders)
-- ✅ Tokens (list, search, categories)
-- ✅ Trading (balance, buy, sell, rebalance, withdraw, export key)
-- ✅ Orders (list, status, retry, partial handling)
-- ✅ History (transactions, summaries)
-- ✅ Portfolio (holdings, P&L)
-- ✅ Social (follow/unfollow stacks)
-- ✅ Chat (stack messages)
-- ✅ Notifications
-- ✅ Referrals
-- ✅ Fees
+**✅ Working:**
+- Account (profile, search users)
+- Profile (twitter, telegram, discord, linkedin, personal links)
+- Stacks (discover, trending, official, create, edit, close)
+- Tokens (list - 3107 tokens)
+- Trading (balance, buy, sell, rebalance, withdraw*, export key*)
+- Orders (list, status, retry, partial handling)
+- History (transactions, summaries)
+- Portfolio (holdings, P&L)
+- Notifications
+- Referrals
+- Fees
 
-### New endpoints added:
-```bash
-# Profile social links
-node scripts/indexify-api.js profile updateTwitter "myhandle"
-node scripts/indexify-api.js profile updateTelegram "myhandle"
-node scripts/indexify-api.js profile updateDiscord "myhandle"
+*Requires SMS 2FA verification code
 
-# Wallet operations (require 2FA)
-node scripts/indexify-api.js trade withdraw "address" 50 "sms_code"
-node scripts/indexify-api.js trade exportKey "sms_code"  # CAUTION!
-
-# Stack creator holdings
-node scripts/indexify-api.js stacks creatorHoldings 280
-
-# Stack partial orders
-node scripts/indexify-api.js stacks partialOrders 280
-```
+**❌ Not available in API:**
+- Social follow/unfollow
+- Chat/messages
 
 ## Links
 
