@@ -72,6 +72,15 @@ const api = {
     profile: (username) => request('POST', '/api/user_info.php?action=public_profile', { username }),
   },
 
+  // ============ PROFILE (Social Links) ============
+  profile: {
+    updateTwitter: (handle) => request('POST', '/api/profile.php?action=twitter', { url: handle }),
+    updateTelegram: (handle) => request('POST', '/api/profile.php?action=telegram', { url: handle }),
+    updateDiscord: (handle) => request('POST', '/api/profile.php?action=discord', { url: handle }),
+    updateLinkedin: (url) => request('POST', '/api/profile.php?action=linkedin', { url }),
+    updatePersonal: (url) => request('POST', '/api/profile.php?action=personal', { url }),
+  },
+
   // ============ NOTIFICATIONS ============
   notifications: {
     list: (page = 1, limit = 20) => request('POST', '/api/notifications.php?action=get_notifications', { page, limit }),
@@ -145,6 +154,13 @@ const api = {
     // Get stack followers count
     followers: (stackId) => request('POST', '/api/stack_info.php?action=followers', { stack_id: stackId }),
     
+    // Get creator's holdings in their stack
+    creatorHoldings: (stackId) => request('POST', '/api/stack_info.php?action=get_creator_holdings', { stack_id: stackId }),
+    
+    // List outstanding partial orders for a stack
+    partialOrders: (stackId, limit = 100, offset = 0) => 
+      request('POST', `/api/stack_partial_orders.php?stack_id=${stackId}&offset=${offset}&limit=${limit}`, {}),
+    
     // Validation
     checkName: (name) => request('POST', '/api/stack_info.php?action=check_name', { name }),
     checkDescription: (desc) => request('POST', '/api/stack_info.php?action=check_description', { description: desc }),
@@ -195,6 +211,19 @@ const api = {
     
     // Rebalance holdings to target allocation
     rebalance: (stackId) => request('POST', '/api/txn.php?action=rebalance', { stack_id: stackId }),
+    
+    // Withdraw USDC (requires SMS 2FA code)
+    withdraw: (address, amount, verificationCode) => request('POST', '/api/txn.php?action=withdraw_usdc', {
+      address,
+      amount,
+      verification_code: verificationCode
+    }),
+    
+    // Export private key (requires SMS 2FA code) - USE WITH CAUTION
+    exportKey: (verificationCode) => request('POST', '/api/txn.php?action=export_key', {
+      verification_code: verificationCode,
+      has_acknowledged_risk: true
+    }),
   },
 
   // ============ ORDERS ============
