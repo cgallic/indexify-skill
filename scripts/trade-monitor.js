@@ -81,37 +81,44 @@ function getDefaultConfig() {
 // API HELPERS
 // ============================================================================
 
-function runApi(args) {
+// Use the API module directly instead of shelling out
+const api = require('./indexify-api.js');
+
+async function getStackPrice(stackId) {
   try {
-    const result = execSync(`node "${API_SCRIPT}" ${args}`, { 
-      encoding: 'utf8', 
-      timeout: 30000,
-      env: { ...process.env }
-    });
-    return JSON.parse(result);
+    const result = await api.stacks.fetch({ id: parseInt(stackId) });
+    if (Array.isArray(result) && result[0]?.price) {
+      return result[0].price;
+    }
+    if (result?.price) return result.price;
   } catch (e) {
-    // Try to parse JSON from stderr/stdout
-    const output = e.stdout || e.stderr || '';
-    try { return JSON.parse(output); } catch {}
-    console.error(`API call failed: ${args}`);
+    console.error(`Error fetching price for stack ${stackId}:`, e.message);
+  }
+  return null;
+}
+
+async function getStackInfo(stackId) {
+  try {
+    const result = await api.stacks.fetch({ id: parseInt(stackId) });
+    if (Array.isArray(result) && result[0]) return result[0];
+    return result;
+  } catch (e) {
     return null;
   }
 }
 
-function getStackPrice(stackId) {
-  const data = runApi(`stacks fetch '{"id":${stackId}}'`);
-  if (data && data.price) return data.price;
-  if (data && Array.isArray(data) && data[0]?.price) return data[0].price;
-  return null;
+async function executeSellApi(stackId, percent) {
+  try {
+    return await api.trade.sell(parseInt(stackId), percent);
+  } catch (e) {
+    console.error(`Sell failed:`, e.message);
+    return null;
+  }
 }
 
-function getStackInfo(stackId) {
-  return runApi(`stacks fetch '{"id":${stackId}}'`);
-}
-
-function executeSell(stackId, percent, reason) {
+async function executeSell(stackId, percent, reason) {
   console.log(`🔴 SELL ${percent}% of stack ${stackId}: ${reason}`);
-  const result = runApi(`trade sell ${stackId} ${percent}`);
+  const result = await executeSellApi(stackId, percent);
   if (result && (result.order_id || result.success)) {
     console.log(`   Order: ${result.order_id || 'submitted'}`);
     return result.order_id || 'submitted';
@@ -175,8 +182,8 @@ function listProfiles(config) {
 // POSITION MONITORING
 // ============================================================================
 
-function checkPosition(stackId, position, config, state) {
-  const currentPrice = getStackPrice(stackId);
+async function checkPosition(stackId, position, config, state) {
+  const currentPrice = await getStackPrice(stackId);
   if (!currentPrice) {
     console.log(`⚠️  Could not get price for stack ${stackId}`);
     return;
@@ -201,7 +208,7 @@ function checkPosition(stackId, position, config, state) {
 
   // 1. Check stop loss first (highest priority)
   if (scenarios.stopLoss && changePct <= scenarios.stopLoss.triggerPct) {
-    const orderId = executeSell(stackId, scenarios.stopLoss.sellPct, 
+    const orderId = await executeSell(stackId, scenarios.stopLoss.sellPct, 
       `Stop loss at ${scenarios.stopLoss.triggerPct}%`);
     if (orderId) {
       state.executedOrders.push({
@@ -225,7 +232,7 @@ function checkPosition(stackId, position, config, state) {
     
     if (dropFromPeakPct >= scenarios.trailingStop.trailPct) {
       const peakChangePct = ((peakPrice - entryPrice) / entryPrice) * 100;
-      const orderId = executeSell(stackId, scenarios.trailingStop.sellPct, 
+      const orderId = await executeSell(stackId, scenarios.trailingStop.sellPct, 
         `Trailing stop (${scenarios.trailingStop.trailPct}% from peak of +${peakChangePct.toFixed(1)}%)`);
       if (orderId) {
         state.executedOrders.push({
@@ -250,7 +257,7 @@ function checkPosition(stackId, position, config, state) {
     for (const tp of scenarios.takeProfit) {
       const stageKey = `tp_${tp.triggerPct}`;
       if (!executedStages.includes(stageKey) && changePct >= tp.triggerPct) {
-        const orderId = executeSell(stackId, tp.sellPct, 
+        const orderId = await executeSell(stackId, tp.sellPct, 
           `Take profit at +${tp.triggerPct}%`);
         if (orderId) {
           state.positions[stackId].takeProfitStages.push(stageKey);
@@ -276,7 +283,7 @@ function checkPosition(stackId, position, config, state) {
 // CLI COMMANDS
 // ============================================================================
 
-function addPosition(stackId, entryPrice, profileName) {
+async function addPosition(stackId, entryPrice, profileName) {
   const config = loadConfig();
   const state = loadState();
   
@@ -289,7 +296,7 @@ function addPosition(stackId, entryPrice, profileName) {
   const finalProfile = profileName || config.defaultProfile || 'etf';
   
   // Get stack info
-  const stackInfo = getStackInfo(stackId);
+  const stackInfo = await getStackInfo(stackId);
   const stackName = stackInfo?.name || stackInfo?.stack_name || `Stack ${stackId}`;
   
   state.positions[stackId] = {
@@ -321,7 +328,7 @@ function addPosition(stackId, entryPrice, profileName) {
   }
 }
 
-function listPositions() {
+async function listPositions() {
   const state = loadState();
   const config = loadConfig();
   
@@ -335,7 +342,7 @@ function listPositions() {
   }
 
   for (const [stackId, pos] of Object.entries(state.positions)) {
-    const currentPrice = getStackPrice(stackId);
+    const currentPrice = await getStackPrice(stackId);
     const changePct = currentPrice ? ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100 : null;
     const profile = config.profiles?.[pos.profile];
     
@@ -353,7 +360,7 @@ function listPositions() {
   }
 }
 
-function runCheck() {
+async function runCheck() {
   const config = loadConfig();
   const state = loadState();
   
@@ -371,7 +378,7 @@ function runCheck() {
   }
   
   for (const [stackId, position] of Object.entries(state.positions)) {
-    checkPosition(stackId, position, config, state);
+    await checkPosition(stackId, position, config, state);
     console.log('');
   }
   
@@ -486,63 +493,68 @@ AUTOMATION:
 `);
 }
 
-// Main
-const args = parseArgs(process.argv.slice(2));
-const cmd = args._[0];
+// Main async wrapper
+(async () => {
+  const args = parseArgs(process.argv.slice(2));
+  const cmd = args._[0];
 
-switch (cmd) {
-  case 'add':
-    const stackId = args._[1];
-    const entryPrice = parseFloat(args._[2]);
-    if (!stackId || isNaN(entryPrice)) {
-      console.log('Usage: trade-monitor.js add <stackId> <entryPrice> [--profile <name>]');
-      process.exit(1);
-    }
-    addPosition(stackId, entryPrice, args.profile);
-    break;
-    
-  case 'remove':
-    if (!args._[1]) {
-      console.log('Usage: trade-monitor.js remove <stackId>');
-      process.exit(1);
-    }
-    removePosition(args._[1]);
-    break;
-    
-  case 'list':
-    listPositions();
-    break;
-    
-  case 'check':
-    runCheck();
-    break;
-    
-  case 'profiles':
-    listProfiles(loadConfig());
-    break;
-    
-  case 'set-default':
-    if (!args._[1]) {
-      console.log('Usage: trade-monitor.js set-default <profile>');
-      process.exit(1);
-    }
-    setDefaultProfile(args._[1]);
-    break;
-    
-  case 'config':
-    showConfig();
-    break;
-    
-  case 'history':
-    showHistory(parseInt(args._[1]) || 20);
-    break;
-    
-  case 'help':
-  case '--help':
-  case '-h':
-    printHelp();
-    break;
-    
-  default:
-    printHelp();
-}
+  switch (cmd) {
+    case 'add':
+      const stackId = args._[1];
+      const entryPrice = parseFloat(args._[2]);
+      if (!stackId || isNaN(entryPrice)) {
+        console.log('Usage: trade-monitor.js add <stackId> <entryPrice> [--profile <name>]');
+        process.exit(1);
+      }
+      await addPosition(stackId, entryPrice, args.profile);
+      break;
+      
+    case 'remove':
+      if (!args._[1]) {
+        console.log('Usage: trade-monitor.js remove <stackId>');
+        process.exit(1);
+      }
+      removePosition(args._[1]);
+      break;
+      
+    case 'list':
+      await listPositions();
+      break;
+      
+    case 'check':
+      await runCheck();
+      break;
+      
+    case 'profiles':
+      listProfiles(loadConfig());
+      break;
+      
+    case 'set-default':
+      if (!args._[1]) {
+        console.log('Usage: trade-monitor.js set-default <profile>');
+        process.exit(1);
+      }
+      setDefaultProfile(args._[1]);
+      break;
+      
+    case 'config':
+      showConfig();
+      break;
+      
+    case 'history':
+      showHistory(parseInt(args._[1]) || 20);
+      break;
+      
+    case 'help':
+    case '--help':
+    case '-h':
+      printHelp();
+      break;
+      
+    default:
+      printHelp();
+  }
+})().catch(e => {
+  console.error('Error:', e.message);
+  process.exit(1);
+});
