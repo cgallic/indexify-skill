@@ -129,9 +129,10 @@ Default rules in `trade-config.json`:
 ## API Coverage
 
 - ✅ Account (profile, search users)
-- ✅ Stacks (discover, trending, official, create, edit, close)
-- ✅ Tokens (list, search)
-- ✅ Trading (balance, buy, sell, rebalance)
+- ✅ Profile (twitter, telegram, discord, linkedin, personal links)
+- ✅ Stacks (discover, trending, official, create, edit, close, partial orders)
+- ✅ Tokens (list, search, categories)
+- ✅ Trading (balance, buy, sell, rebalance, withdraw, export key)
 - ✅ Orders (list, status, retry, partial handling)
 - ✅ History (transactions, summaries)
 - ✅ Portfolio (holdings, P&L)
@@ -140,6 +141,24 @@ Default rules in `trade-config.json`:
 - ✅ Notifications
 - ✅ Referrals
 - ✅ Fees
+
+### New endpoints added:
+```bash
+# Profile social links
+node scripts/indexify-api.js profile updateTwitter "myhandle"
+node scripts/indexify-api.js profile updateTelegram "myhandle"
+node scripts/indexify-api.js profile updateDiscord "myhandle"
+
+# Wallet operations (require 2FA)
+node scripts/indexify-api.js trade withdraw "address" 50 "sms_code"
+node scripts/indexify-api.js trade exportKey "sms_code"  # CAUTION!
+
+# Stack creator holdings
+node scripts/indexify-api.js stacks creatorHoldings 280
+
+# Stack partial orders
+node scripts/indexify-api.js stacks partialOrders 280
+```
 
 ## Links
 
