@@ -1,0 +1,14 @@
+# Secrets
+*.key
+*-key
+.env
+.env.*
+
+# State files (contain order IDs, positions)
+trade-state.json
+
+# Node
+node_modules/
+
+# OS
+.DS_Store

@@ -1,0 +1,31 @@
+{
+  "name": "indexify",
+  "version": "1.0.0",
+  "description": "Complete Indexify API integration - trade crypto ETFs (stacks) on Solana. Includes discovery, trading, orders, portfolio, social features, and automated trading.",
+  "keywords": [
+    "indexify",
+    "trading",
+    "crypto",
+    "solana",
+    "etf",
+    "defi",
+    "portfolio",
+    "stacks"
+  ],
+  "author": "cgallic",
+  "main": "scripts/indexify-api.js",
+  "bin": {
+    "indexify": "./scripts/indexify.sh",
+    "indexify-api": "./scripts/indexify-api.js",
+    "quick-trade": "./scripts/quick-trade.js"
+  },
+  "scripts": {
+    "status": "node scripts/quick-trade.js status",
+    "trending": "node scripts/indexify-api.js stacks trending",
+    "official": "node scripts/indexify-api.js stacks official",
+    "balance": "node scripts/indexify-api.js trade balance"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

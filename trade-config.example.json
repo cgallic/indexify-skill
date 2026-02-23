@@ -1,0 +1,49 @@
+{
+  "enabled": true,
+  "checkIntervalMs": 60000,
+  
+  "allowedStacks": {
+    "note": "ONLY trade official/curated stacks - no random user meme combos",
+    "official": [
+      {"id": 13198, "slug": "pre-ipo-technology-portfolio-cmkm", "name": "Pre IPO Technology Portfolio"},
+      {"id": 274, "slug": "trichain-leaders", "name": "TriChain Leaders"},
+      {"id": 280, "slug": "solana-meme-index", "name": "Solana Meme Index"}
+    ]
+  },
+  
+  "entryRules": {
+    "note": "Only enter on good setups, not FOMO",
+    "requireDip": true,
+    "minDipPct": -5,
+    "maxFearGreed": 30,
+    "minUsdcBalance": 10
+  },
+  
+  "positionSizing": {
+    "maxPerTrade": 25,
+    "maxTotalExposure": 60,
+    "note": "Max 25 USDC per trade, max 60% of balance in positions"
+  },
+
+  "scenarios": {
+    "takeProfit": [
+      {"triggerPct": 10, "sellPct": 25, "note": "Lock 25% at +10%"},
+      {"triggerPct": 20, "sellPct": 25, "note": "Lock another 25% at +20%"},
+      {"triggerPct": 35, "sellPct": 25, "note": "Lock 25% at +35%"},
+      {"triggerPct": 50, "sellPct": 25, "note": "Exit remaining at +50%"}
+    ],
+    "stopLoss": {
+      "triggerPct": -15,
+      "sellPct": 100,
+      "note": "Cut losses at -15%"
+    },
+    "trailingStop": {
+      "activateAtPct": 15,
+      "trailPct": 8,
+      "sellPct": 100,
+      "note": "Trail 8% from peak after +15%"
+    }
+  },
+  
+  "positions": []
+}
