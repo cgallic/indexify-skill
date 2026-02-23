@@ -12,7 +12,8 @@ Indexify lets you trade weighted token portfolios (stacks) with one transaction.
 ## Setup
 
 ```bash
-# Get API key from indexify.app → Settings → API Key
+# 1. Sign up at https://indexify.app?ref=yellowgentle99960
+# 2. Get API key from Settings → API Key
 export INDEXIFY_API_KEY="ix_your_key_here"
 
 # Or save to file

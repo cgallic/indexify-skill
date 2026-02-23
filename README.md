@@ -20,7 +20,8 @@ cd indexify-skill
 
 ## Setup
 
-Get your API key from [indexify.app](https://indexify.app) → Settings → API Key
+1. **Sign up** at [indexify.app?ref=yellowgentle99960](https://indexify.app?ref=yellowgentle99960) (referral link)
+2. Get your API key from Settings → API Key
 
 ```bash
 # Option 1: Environment variable
@@ -149,9 +150,10 @@ Default rules in `trade-config.json`:
 
 ## Links
 
-- **Indexify:** https://indexify.app
+- **Indexify (referral):** https://indexify.app?ref=yellowgentle99960
 - **API Docs:** https://indexify.finance
 - **OpenClaw:** https://openclaw.ai
+- **Skill Author:** @SnappedAI
 
 ## License
 
