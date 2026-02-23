@@ -25,6 +25,128 @@
     "note": "Max 25 USDC per trade, max 60% of balance in positions"
   },
 
+  "profiles": {
+    "etf": {
+      "name": "ETF / Index",
+      "description": "Conservative exits for diversified portfolios. Tighter stops, modest targets.",
+      "bestFor": ["Pre-IPO Tech", "TriChain Leaders", "diversified baskets"],
+      "scenarios": {
+        "takeProfit": [
+          {"triggerPct": 10, "sellPct": 25, "note": "Lock 25% at +10%"},
+          {"triggerPct": 20, "sellPct": 25, "note": "Lock 25% at +20%"},
+          {"triggerPct": 35, "sellPct": 25, "note": "Lock 25% at +35%"},
+          {"triggerPct": 50, "sellPct": 25, "note": "Exit remaining at +50%"}
+        ],
+        "stopLoss": {"triggerPct": -15, "sellPct": 100, "note": "Cut at -15%"},
+        "trailingStop": {"activateAtPct": 15, "trailPct": 8, "sellPct": 100}
+      }
+    },
+    
+    "meme": {
+      "name": "Meme / High Volatility",
+      "description": "Wide stops, high targets for volatile meme tokens. Let winners run.",
+      "bestFor": ["Solana Meme Index", "meme baskets", "high-vol plays"],
+      "scenarios": {
+        "takeProfit": [
+          {"triggerPct": 50, "sellPct": 25, "note": "First exit at +50%"},
+          {"triggerPct": 100, "sellPct": 25, "note": "Lock 25% at 2x"},
+          {"triggerPct": 200, "sellPct": 25, "note": "Lock 25% at 3x"},
+          {"triggerPct": 500, "sellPct": 25, "note": "Exit moonbag at 6x"}
+        ],
+        "stopLoss": {"triggerPct": -40, "sellPct": 100, "note": "Wide stop at -40%"},
+        "trailingStop": {"activateAtPct": 50, "trailPct": 20, "sellPct": 100}
+      }
+    },
+    
+    "moonbag": {
+      "name": "Moonbag",
+      "description": "Recover principal early, let rest ride forever. No fixed TP ceiling.",
+      "bestFor": ["high conviction plays", "early entries", "asymmetric bets"],
+      "scenarios": {
+        "takeProfit": [
+          {"triggerPct": 100, "sellPct": 50, "note": "Recover principal at 2x"},
+          {"triggerPct": 500, "sellPct": 25, "note": "Take profits at 6x"},
+          {"triggerPct": 1000, "sellPct": 12.5, "note": "Trim at 10x"}
+        ],
+        "stopLoss": {"triggerPct": -50, "sellPct": 100, "note": "Only cut at -50%"},
+        "trailingStop": {"activateAtPct": 100, "trailPct": 25, "sellPct": 100}
+      }
+    },
+    
+    "scalp": {
+      "name": "Scalp",
+      "description": "Quick in/out. Tight stops, small targets, high frequency.",
+      "bestFor": ["range-bound markets", "quick flips", "high liquidity stacks"],
+      "scenarios": {
+        "takeProfit": [
+          {"triggerPct": 3, "sellPct": 50, "note": "Quick 50% at +3%"},
+          {"triggerPct": 5, "sellPct": 50, "note": "Exit rest at +5%"}
+        ],
+        "stopLoss": {"triggerPct": -3, "sellPct": 100, "note": "Tight stop at -3%"},
+        "trailingStop": {"activateAtPct": 3, "trailPct": 2, "sellPct": 100}
+      }
+    },
+    
+    "swing": {
+      "name": "Swing",
+      "description": "Multi-day holds. Moderate stops, let trends develop.",
+      "bestFor": ["trending markets", "breakouts", "1-2 week holds"],
+      "scenarios": {
+        "takeProfit": [
+          {"triggerPct": 20, "sellPct": 33, "note": "First exit at +20%"},
+          {"triggerPct": 40, "sellPct": 33, "note": "Second at +40%"},
+          {"triggerPct": 75, "sellPct": 34, "note": "Final at +75%"}
+        ],
+        "stopLoss": {"triggerPct": -12, "sellPct": 100, "note": "Stop at -12%"},
+        "trailingStop": {"activateAtPct": 20, "trailPct": 10, "sellPct": 100}
+      }
+    },
+    
+    "dca_out": {
+      "name": "DCA Out",
+      "description": "Gradual exit regardless of price. Time-based de-risking.",
+      "bestFor": ["reducing exposure", "uncertain markets", "profit taking"],
+      "scenarios": {
+        "takeProfit": [
+          {"triggerPct": 0, "sellPct": 20, "note": "Sell 20% immediately"},
+          {"triggerPct": 5, "sellPct": 20, "note": "Sell 20% at +5%"},
+          {"triggerPct": 10, "sellPct": 20, "note": "Sell 20% at +10%"},
+          {"triggerPct": 15, "sellPct": 20, "note": "Sell 20% at +15%"},
+          {"triggerPct": 20, "sellPct": 20, "note": "Exit at +20%"}
+        ],
+        "stopLoss": {"triggerPct": -25, "sellPct": 100, "note": "Emergency stop at -25%"},
+        "trailingStop": null
+      }
+    },
+    
+    "trailing_only": {
+      "name": "Trailing Only",
+      "description": "No fixed TP. Pure trailing stop to maximize runners.",
+      "bestFor": ["strong trends", "momentum plays", "letting winners run"],
+      "scenarios": {
+        "takeProfit": [],
+        "stopLoss": {"triggerPct": -20, "sellPct": 100, "note": "Initial stop at -20%"},
+        "trailingStop": {"activateAtPct": 10, "trailPct": 15, "sellPct": 100}
+      }
+    },
+    
+    "conservative": {
+      "name": "Conservative",
+      "description": "Capital preservation first. Small wins, minimal drawdown.",
+      "bestFor": ["uncertain markets", "small accounts", "risk-averse"],
+      "scenarios": {
+        "takeProfit": [
+          {"triggerPct": 5, "sellPct": 50, "note": "Take half at +5%"},
+          {"triggerPct": 10, "sellPct": 50, "note": "Exit at +10%"}
+        ],
+        "stopLoss": {"triggerPct": -5, "sellPct": 100, "note": "Tight stop at -5%"},
+        "trailingStop": {"activateAtPct": 5, "trailPct": 3, "sellPct": 100}
+      }
+    }
+  },
+  
+  "defaultProfile": "etf",
+  
   "scenarios": {
     "takeProfit": [
       {"triggerPct": 10, "sellPct": 25, "note": "Lock 25% at +10%"},

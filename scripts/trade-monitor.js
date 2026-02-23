@@ -1,45 +1,28 @@
 #!/usr/bin/env node
 /**
  * Indexify Smart Trading Monitor
- * Monitors positions and executes take-profit / stop-loss orders
+ * 
+ * Monitors positions and executes automated exits based on configurable profiles.
+ * Supports multiple trading strategies: ETF, meme, moonbag, scalp, swing, etc.
+ * 
+ * Usage:
+ *   trade-monitor.js add <stackId> <entryPrice> [--profile <name>]
+ *   trade-monitor.js check
+ *   trade-monitor.js list
+ *   trade-monitor.js profiles
  */
 
 const fs = require('fs');
+const path = require('path');
 const { execSync } = require('child_process');
 
-const CONFIG_PATH = '/root/clawd/skills/indexify/trade-config.json';
-const STATE_PATH = '/root/clawd/skills/indexify/trade-state.json';
-const SCRIPT = '/root/clawd/skills/indexify/scripts/indexify.sh';
+const CONFIG_PATH = path.join(__dirname, '..', 'trade-config.json');
+const STATE_PATH = path.join(__dirname, '..', 'trade-state.json');
+const API_SCRIPT = path.join(__dirname, 'indexify-api.js');
 
-// Default config
-const DEFAULT_CONFIG = {
-  enabled: true,
-  checkIntervalMs: 60000, // 1 minute
-  scenarios: {
-    // Take profit ladder
-    takeProfit: [
-      { triggerPct: 15, sellPct: 25, note: "Lock 25% at +15%" },
-      { triggerPct: 30, sellPct: 25, note: "Lock another 25% at +30%" },
-      { triggerPct: 50, sellPct: 25, note: "Lock 25% at +50%" },
-      { triggerPct: 100, sellPct: 25, note: "Moon bag exit at 2x" }
-    ],
-    // Stop loss
-    stopLoss: {
-      triggerPct: -20,
-      sellPct: 100,
-      note: "Cut losses at -20%"
-    },
-    // Trailing stop (activates after initial profit)
-    trailingStop: {
-      activateAtPct: 20,  // Start trailing after +20%
-      trailPct: 10,       // Sell if drops 10% from peak
-      sellPct: 100,
-      note: "Trail 10% from peak after +20%"
-    }
-  },
-  // Positions to monitor (auto-populated from trades)
-  positions: []
-};
+// ============================================================================
+// CONFIG & STATE MANAGEMENT
+// ============================================================================
 
 function loadConfig() {
   try {
@@ -49,7 +32,7 @@ function loadConfig() {
   } catch (e) {
     console.error('Error loading config:', e.message);
   }
-  return DEFAULT_CONFIG;
+  return getDefaultConfig();
 }
 
 function saveConfig(config) {
@@ -63,7 +46,7 @@ function loadState() {
     }
   } catch (e) {}
   return { 
-    positions: {},  // stackId -> { entryPrice, entryTime, peakPrice, takeProfitStages: [] }
+    positions: {},
     executedOrders: [],
     lastCheck: null
   };
@@ -73,33 +56,124 @@ function saveState(state) {
   fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
 }
 
-function runCmd(args) {
+function getDefaultConfig() {
+  return {
+    enabled: true,
+    defaultProfile: 'etf',
+    profiles: {
+      etf: {
+        name: 'ETF / Index',
+        scenarios: {
+          takeProfit: [
+            {triggerPct: 10, sellPct: 25}, {triggerPct: 20, sellPct: 25},
+            {triggerPct: 35, sellPct: 25}, {triggerPct: 50, sellPct: 25}
+          ],
+          stopLoss: {triggerPct: -15, sellPct: 100},
+          trailingStop: {activateAtPct: 15, trailPct: 8, sellPct: 100}
+        }
+      }
+    },
+    positions: []
+  };
+}
+
+// ============================================================================
+// API HELPERS
+// ============================================================================
+
+function runApi(args) {
   try {
-    const result = execSync(`${SCRIPT} ${args}`, { encoding: 'utf8', timeout: 30000 });
+    const result = execSync(`node "${API_SCRIPT}" ${args}`, { 
+      encoding: 'utf8', 
+      timeout: 30000,
+      env: { ...process.env }
+    });
     return JSON.parse(result);
   } catch (e) {
-    console.error(`Command failed: ${args}`, e.message);
+    // Try to parse JSON from stderr/stdout
+    const output = e.stdout || e.stderr || '';
+    try { return JSON.parse(output); } catch {}
+    console.error(`API call failed: ${args}`);
     return null;
   }
 }
 
 function getStackPrice(stackId) {
-  const data = runCmd(`stacks fetch --id ${stackId}`);
-  if (data && Array.isArray(data) && data[0]) {
-    return data[0].price;
-  }
+  const data = runApi(`stacks fetch '{"id":${stackId}}'`);
+  if (data && data.price) return data.price;
+  if (data && Array.isArray(data) && data[0]?.price) return data[0].price;
   return null;
+}
+
+function getStackInfo(stackId) {
+  return runApi(`stacks fetch '{"id":${stackId}}'`);
 }
 
 function executeSell(stackId, percent, reason) {
   console.log(`🔴 SELL ${percent}% of stack ${stackId}: ${reason}`);
-  const result = runCmd(`trade sell --stack ${stackId} --percent ${percent}`);
-  if (result && result.order_id) {
-    console.log(`   Order: ${result.order_id}`);
-    return result.order_id;
+  const result = runApi(`trade sell ${stackId} ${percent}`);
+  if (result && (result.order_id || result.success)) {
+    console.log(`   Order: ${result.order_id || 'submitted'}`);
+    return result.order_id || 'submitted';
   }
+  console.log(`   ⚠️  Sell may have failed`);
   return null;
 }
+
+// ============================================================================
+// PROFILE MANAGEMENT
+// ============================================================================
+
+function getProfile(config, profileName) {
+  const name = profileName || config.defaultProfile || 'etf';
+  const profile = config.profiles?.[name];
+  if (!profile) {
+    console.error(`Profile "${name}" not found. Available: ${Object.keys(config.profiles || {}).join(', ')}`);
+    return null;
+  }
+  return { name, ...profile };
+}
+
+function listProfiles(config) {
+  console.log('\n📊 AVAILABLE TRADING PROFILES\n');
+  console.log('=' .repeat(70));
+  
+  for (const [key, profile] of Object.entries(config.profiles || {})) {
+    const scenarios = profile.scenarios || {};
+    const tp = scenarios.takeProfit || [];
+    const sl = scenarios.stopLoss;
+    const ts = scenarios.trailingStop;
+    
+    console.log(`\n${key.toUpperCase()} - ${profile.name}`);
+    console.log('-'.repeat(40));
+    console.log(`  ${profile.description || ''}`);
+    if (profile.bestFor?.length) {
+      console.log(`  Best for: ${profile.bestFor.join(', ')}`);
+    }
+    console.log('');
+    
+    if (tp.length) {
+      console.log('  Take Profit Ladder:');
+      tp.forEach(t => console.log(`    +${t.triggerPct}% → sell ${t.sellPct}%`));
+    }
+    
+    if (sl) {
+      console.log(`  Stop Loss: ${sl.triggerPct}% → sell ${sl.sellPct}%`);
+    }
+    
+    if (ts) {
+      console.log(`  Trailing Stop: ${ts.trailPct}% trail after +${ts.activateAtPct}%`);
+    }
+  }
+  
+  console.log('\n' + '='.repeat(70));
+  console.log(`Default profile: ${config.defaultProfile || 'etf'}`);
+  console.log('\nUsage: trade-monitor.js add <stackId> <price> --profile meme');
+}
+
+// ============================================================================
+// POSITION MONITORING
+// ============================================================================
 
 function checkPosition(stackId, position, config, state) {
   const currentPrice = getStackPrice(stackId);
@@ -112,46 +186,55 @@ function checkPosition(stackId, position, config, state) {
   const changePct = ((currentPrice - entryPrice) / entryPrice) * 100;
   const peakPrice = Math.max(position.peakPrice || entryPrice, currentPrice);
   
-  // Update peak price
+  // Update peak price in state
   state.positions[stackId].peakPrice = peakPrice;
   
-  console.log(`📊 Stack ${stackId}: Entry $${entryPrice.toFixed(4)} → $${currentPrice.toFixed(4)} (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%)`);
-
-  const scenarios = config.scenarios;
+  const profile = getProfile(config, position.profile);
+  if (!profile) return;
+  
+  const scenarios = profile.scenarios;
   const executedStages = position.takeProfitStages || [];
 
-  // Check stop loss first
+  console.log(`📊 Stack ${stackId} [${profile.name}]`);
+  console.log(`   Entry: $${entryPrice.toFixed(4)} → Current: $${currentPrice.toFixed(4)} (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%)`);
+  console.log(`   Peak: $${peakPrice.toFixed(4)} | TP stages hit: ${executedStages.length}`);
+
+  // 1. Check stop loss first (highest priority)
   if (scenarios.stopLoss && changePct <= scenarios.stopLoss.triggerPct) {
-    const orderId = executeSell(stackId, scenarios.stopLoss.sellPct, scenarios.stopLoss.note);
+    const orderId = executeSell(stackId, scenarios.stopLoss.sellPct, 
+      `Stop loss at ${scenarios.stopLoss.triggerPct}%`);
     if (orderId) {
       state.executedOrders.push({
         type: 'stopLoss',
         stackId,
+        profile: position.profile,
         orderId,
-        price: currentPrice,
+        entryPrice,
+        exitPrice: currentPrice,
         changePct,
         timestamp: Date.now()
       });
-      // Remove position after full stop loss
       delete state.positions[stackId];
     }
     return;
   }
 
-  // Check trailing stop
+  // 2. Check trailing stop
   if (scenarios.trailingStop && changePct >= scenarios.trailingStop.activateAtPct) {
-    const peakChangePct = ((peakPrice - entryPrice) / entryPrice) * 100;
     const dropFromPeakPct = ((peakPrice - currentPrice) / peakPrice) * 100;
     
     if (dropFromPeakPct >= scenarios.trailingStop.trailPct) {
+      const peakChangePct = ((peakPrice - entryPrice) / entryPrice) * 100;
       const orderId = executeSell(stackId, scenarios.trailingStop.sellPct, 
-        `${scenarios.trailingStop.note} (peak was +${peakChangePct.toFixed(1)}%)`);
+        `Trailing stop (${scenarios.trailingStop.trailPct}% from peak of +${peakChangePct.toFixed(1)}%)`);
       if (orderId) {
         state.executedOrders.push({
           type: 'trailingStop',
           stackId,
+          profile: position.profile,
           orderId,
-          price: currentPrice,
+          entryPrice,
+          exitPrice: currentPrice,
           peakPrice,
           changePct,
           timestamp: Date.now()
@@ -162,21 +245,25 @@ function checkPosition(stackId, position, config, state) {
     }
   }
 
-  // Check take profit ladder
-  if (scenarios.takeProfit) {
+  // 3. Check take profit ladder
+  if (scenarios.takeProfit && scenarios.takeProfit.length > 0) {
     for (const tp of scenarios.takeProfit) {
       const stageKey = `tp_${tp.triggerPct}`;
       if (!executedStages.includes(stageKey) && changePct >= tp.triggerPct) {
-        const orderId = executeSell(stackId, tp.sellPct, tp.note);
+        const orderId = executeSell(stackId, tp.sellPct, 
+          `Take profit at +${tp.triggerPct}%`);
         if (orderId) {
           state.positions[stackId].takeProfitStages.push(stageKey);
           state.executedOrders.push({
             type: 'takeProfit',
             stackId,
+            profile: position.profile,
             orderId,
-            price: currentPrice,
+            entryPrice,
+            exitPrice: currentPrice,
             changePct,
             stage: tp.triggerPct,
+            sellPct: tp.sellPct,
             timestamp: Date.now()
           });
         }
@@ -185,16 +272,53 @@ function checkPosition(stackId, position, config, state) {
   }
 }
 
-function addPosition(stackId, entryPrice) {
+// ============================================================================
+// CLI COMMANDS
+// ============================================================================
+
+function addPosition(stackId, entryPrice, profileName) {
+  const config = loadConfig();
   const state = loadState();
+  
+  // Validate profile exists
+  const profile = getProfile(config, profileName);
+  if (!profile && profileName) {
+    process.exit(1);
+  }
+  
+  const finalProfile = profileName || config.defaultProfile || 'etf';
+  
+  // Get stack info
+  const stackInfo = getStackInfo(stackId);
+  const stackName = stackInfo?.name || stackInfo?.stack_name || `Stack ${stackId}`;
+  
   state.positions[stackId] = {
+    stackId,
+    stackName,
     entryPrice,
     entryTime: Date.now(),
     peakPrice: entryPrice,
+    profile: finalProfile,
     takeProfitStages: []
   };
   saveState(state);
-  console.log(`✅ Added position: Stack ${stackId} @ $${entryPrice}`);
+  
+  const pf = config.profiles[finalProfile];
+  console.log(`\n✅ Position added`);
+  console.log(`   Stack: ${stackName} (${stackId})`);
+  console.log(`   Entry: $${entryPrice}`);
+  console.log(`   Profile: ${finalProfile} - ${pf?.name || ''}`);
+  
+  if (pf?.scenarios) {
+    const tp = pf.scenarios.takeProfit || [];
+    const sl = pf.scenarios.stopLoss;
+    const ts = pf.scenarios.trailingStop;
+    
+    console.log(`\n   Exit strategy:`);
+    if (tp.length) console.log(`   • TP: ${tp.map(t => `+${t.triggerPct}%`).join(' → ')}`);
+    if (sl) console.log(`   • SL: ${sl.triggerPct}%`);
+    if (ts) console.log(`   • Trail: ${ts.trailPct}% after +${ts.activateAtPct}%`);
+  }
 }
 
 function listPositions() {
@@ -204,32 +328,32 @@ function listPositions() {
   console.log('\n📈 ACTIVE POSITIONS\n');
   
   if (Object.keys(state.positions).length === 0) {
-    console.log('No positions tracked.\n');
-    console.log('Add with: trade-monitor.js add <stackId> <entryPrice>');
+    console.log('No positions tracked.');
+    console.log('\nAdd with: trade-monitor.js add <stackId> <entryPrice> [--profile <name>]');
+    console.log('Profiles: trade-monitor.js profiles');
     return;
   }
 
   for (const [stackId, pos] of Object.entries(state.positions)) {
     const currentPrice = getStackPrice(stackId);
     const changePct = currentPrice ? ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100 : null;
+    const profile = config.profiles?.[pos.profile];
     
-    console.log(`Stack ${stackId}:`);
-    console.log(`  Entry: $${pos.entryPrice.toFixed(4)}`);
+    console.log(`${pos.stackName || 'Stack ' + stackId} (${stackId})`);
+    console.log(`  Profile: ${pos.profile} (${profile?.name || 'unknown'})`);
+    console.log(`  Entry: $${pos.entryPrice.toFixed(4)} @ ${new Date(pos.entryTime).toLocaleDateString()}`);
     if (currentPrice) {
-      console.log(`  Current: $${currentPrice.toFixed(4)} (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%)`);
+      const arrow = changePct >= 0 ? '↑' : '↓';
+      const color = changePct >= 0 ? '+' : '';
+      console.log(`  Current: $${currentPrice.toFixed(4)} ${arrow} ${color}${changePct.toFixed(2)}%`);
     }
     console.log(`  Peak: $${(pos.peakPrice || pos.entryPrice).toFixed(4)}`);
     console.log(`  TP stages hit: ${pos.takeProfitStages?.length || 0}`);
     console.log('');
   }
-
-  console.log('📋 SCENARIOS:');
-  console.log(`  Take Profit: ${config.scenarios.takeProfit.map(t => `+${t.triggerPct}%`).join(' → ')}`);
-  console.log(`  Stop Loss: ${config.scenarios.stopLoss.triggerPct}%`);
-  console.log(`  Trailing: ${config.scenarios.trailingStop.trailPct}% trail after +${config.scenarios.trailingStop.activateAtPct}%`);
 }
 
-function runOnce() {
+function runCheck() {
   const config = loadConfig();
   const state = loadState();
   
@@ -238,40 +362,151 @@ function runOnce() {
     return;
   }
 
-  console.log(`\n🔄 Checking positions at ${new Date().toISOString()}\n`);
+  const posCount = Object.keys(state.positions).length;
+  console.log(`\n🔄 Checking ${posCount} position(s) at ${new Date().toISOString()}\n`);
+  
+  if (posCount === 0) {
+    console.log('No positions to monitor.');
+    return;
+  }
   
   for (const [stackId, position] of Object.entries(state.positions)) {
     checkPosition(stackId, position, config, state);
+    console.log('');
   }
   
   state.lastCheck = Date.now();
   saveState(state);
 }
 
-// CLI
-const cmd = process.argv[2];
+function showHistory(limit = 20) {
+  const state = loadState();
+  console.log('\n📜 TRADE HISTORY\n');
+  
+  const orders = (state.executedOrders || []).slice(-limit).reverse();
+  
+  if (orders.length === 0) {
+    console.log('No executed orders yet.');
+    return;
+  }
+  
+  for (const order of orders) {
+    const date = new Date(order.timestamp).toLocaleString();
+    const pnl = order.changePct ? `${order.changePct >= 0 ? '+' : ''}${order.changePct.toFixed(2)}%` : 'N/A';
+    const type = order.type.toUpperCase().padEnd(12);
+    console.log(`${date} | ${type} | Stack ${order.stackId} | ${pnl} | ${order.profile || 'default'}`);
+  }
+}
+
+function showConfig() {
+  const config = loadConfig();
+  console.log(JSON.stringify(config, null, 2));
+}
+
+function setDefaultProfile(profileName) {
+  const config = loadConfig();
+  if (!config.profiles?.[profileName]) {
+    console.error(`Profile "${profileName}" not found.`);
+    console.log(`Available: ${Object.keys(config.profiles || {}).join(', ')}`);
+    process.exit(1);
+  }
+  config.defaultProfile = profileName;
+  saveConfig(config);
+  console.log(`✅ Default profile set to: ${profileName}`);
+}
+
+function removePosition(stackId) {
+  const state = loadState();
+  if (!state.positions[stackId]) {
+    console.log(`No position found for stack ${stackId}`);
+    return;
+  }
+  const pos = state.positions[stackId];
+  delete state.positions[stackId];
+  saveState(state);
+  console.log(`✅ Removed position: ${pos.stackName || stackId}`);
+}
+
+// ============================================================================
+// MAIN CLI PARSER
+// ============================================================================
+
+function parseArgs(args) {
+  const result = { _: [] };
+  for (let i = 0; i < args.length; i++) {
+    if (args[i].startsWith('--')) {
+      const key = args[i].slice(2);
+      const next = args[i + 1];
+      if (next && !next.startsWith('--')) {
+        result[key] = next;
+        i++;
+      } else {
+        result[key] = true;
+      }
+    } else {
+      result._.push(args[i]);
+    }
+  }
+  return result;
+}
+
+function printHelp() {
+  console.log(`
+Indexify Smart Trading Monitor
+==============================
+
+COMMANDS:
+  add <stackId> <price> [--profile <name>]   Add position with exit strategy
+  remove <stackId>                           Remove position
+  list                                       Show active positions
+  check                                      Run exit check (cron this)
+  profiles                                   List all trading profiles
+  set-default <profile>                      Set default profile
+  history [limit]                            Show executed orders
+  config                                     Show full config
+
+PROFILES:
+  etf           Conservative for diversified stacks (TP: +10→50%, SL: -15%)
+  meme          High volatility plays (TP: +50→500%, SL: -40%)
+  moonbag       Recover principal, let rest ride (TP: +100% sell 50%)
+  scalp         Quick in/out (TP: +3-5%, SL: -3%)
+  swing         Multi-day trends (TP: +20→75%, SL: -12%)
+  conservative  Capital preservation (TP: +5-10%, SL: -5%)
+  trailing_only Pure trailing stop, no fixed TP
+  dca_out       Gradual exit regardless of price
+
+EXAMPLES:
+  trade-monitor.js add 280 1.50 --profile meme
+  trade-monitor.js add 274 2.00 --profile etf
+  trade-monitor.js check
+  trade-monitor.js profiles
+
+AUTOMATION:
+  Run 'trade-monitor.js check' via cron every 1-5 minutes.
+`);
+}
+
+// Main
+const args = parseArgs(process.argv.slice(2));
+const cmd = args._[0];
 
 switch (cmd) {
   case 'add':
-    const stackId = process.argv[3];
-    const entryPrice = parseFloat(process.argv[4]);
-    if (!stackId || !entryPrice) {
-      console.log('Usage: trade-monitor.js add <stackId> <entryPrice>');
+    const stackId = args._[1];
+    const entryPrice = parseFloat(args._[2]);
+    if (!stackId || isNaN(entryPrice)) {
+      console.log('Usage: trade-monitor.js add <stackId> <entryPrice> [--profile <name>]');
       process.exit(1);
     }
-    addPosition(stackId, entryPrice);
+    addPosition(stackId, entryPrice, args.profile);
     break;
     
   case 'remove':
-    const removeId = process.argv[3];
-    if (!removeId) {
+    if (!args._[1]) {
       console.log('Usage: trade-monitor.js remove <stackId>');
       process.exit(1);
     }
-    const st = loadState();
-    delete st.positions[removeId];
-    saveState(st);
-    console.log(`Removed position ${removeId}`);
+    removePosition(args._[1]);
     break;
     
   case 'list':
@@ -279,43 +514,35 @@ switch (cmd) {
     break;
     
   case 'check':
-    runOnce();
+    runCheck();
+    break;
+    
+  case 'profiles':
+    listProfiles(loadConfig());
+    break;
+    
+  case 'set-default':
+    if (!args._[1]) {
+      console.log('Usage: trade-monitor.js set-default <profile>');
+      process.exit(1);
+    }
+    setDefaultProfile(args._[1]);
     break;
     
   case 'config':
-    const cfg = loadConfig();
-    console.log(JSON.stringify(cfg, null, 2));
+    showConfig();
     break;
     
-  case 'init':
-    saveConfig(DEFAULT_CONFIG);
-    console.log('Config initialized at', CONFIG_PATH);
-    break;
-
   case 'history':
-    const s = loadState();
-    console.log('\n📜 EXECUTED ORDERS:\n');
-    for (const order of (s.executedOrders || []).slice(-10)) {
-      console.log(`${new Date(order.timestamp).toISOString()} | ${order.type} | Stack ${order.stackId} | ${order.changePct?.toFixed(1)}% | Order: ${order.orderId}`);
-    }
+    showHistory(parseInt(args._[1]) || 20);
+    break;
+    
+  case 'help':
+  case '--help':
+  case '-h':
+    printHelp();
     break;
     
   default:
-    console.log(`
-Indexify Smart Trading Monitor
-
-USAGE:
-  trade-monitor.js add <stackId> <entryPrice>   Add position to monitor
-  trade-monitor.js remove <stackId>             Remove position
-  trade-monitor.js list                         Show positions & scenarios
-  trade-monitor.js check                        Run one check cycle
-  trade-monitor.js config                       Show current config
-  trade-monitor.js init                         Initialize default config
-  trade-monitor.js history                      Show executed orders
-
-SCENARIOS (edit trade-config.json):
-  Take Profit:  +15% (sell 25%) → +30% (25%) → +50% (25%) → +100% (25%)
-  Stop Loss:    -20% (sell 100%)
-  Trailing:     10% trail from peak after +20%
-`);
+    printHelp();
 }
